@@ -10,7 +10,7 @@
     "next": "latest",
     "react": "latest",
     "react-dom": "latest",
-    "openai": "^4.0.0",
+    "@google/generative-ai": "^0.21.0",
     "papaparse": "^5.4.1"
   }
 }
