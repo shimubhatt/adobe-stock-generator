@@ -27,41 +27,54 @@ STRICT RULES:
 
 OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "keywords". Do not add markdown code blocks or backticks.`;
 
-    // Using Google AI Stable v1 Endpoint with gemini-2.0-flash
-    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+    // Free Tier Supported Stable Models Priority Order
+    const candidateModels = ["gemini-1.5-flash", "gemini-2.5-flash"];
+    let responseText = null;
+    let lastError = null;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: promptText },
+    // Loop through candidate models if one fails due to quota limit
+    for (const modelName of candidateModels) {
+      try {
+        const url = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${apiKey}`;
+
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [
               {
-                inline_data: {
-                  mime_type: mimeType,
-                  data: base64Data
-                }
+                parts: [
+                  { text: promptText },
+                  {
+                    inline_data: {
+                      mime_type: mimeType,
+                      data: base64Data
+                    }
+                  }
+                ]
               }
-            ]
-          }
-        ],
-        generationConfig: {
-          response_mime_type: "application/json"
+            ],
+            generationConfig: {
+              response_mime_type: "application/json"
+            }
+          })
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
+          responseText = data.candidates[0].content.parts[0].text;
+          break; // Success! Exit loop
+        } else {
+          lastError = data.error?.message || `Failed on model ${modelName}`;
         }
-      })
-    });
-
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error?.message || 'Google API Error');
+      } catch (err) {
+        lastError = err.message;
+      }
     }
 
-    const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
     if (!responseText) {
-      throw new Error("Invalid response from Gemini API");
+      throw new Error(lastError || "Could not generate content from Gemini API.");
     }
 
     const cleanJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
