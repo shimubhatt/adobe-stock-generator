@@ -35,7 +35,8 @@ export async function POST(req) {
       : defaultPrompt;
 
     const response = await groq.chat.completions.create({
-      model: 'llama-3.2-11b-vision-instruct',
+      // ✅ UPDATED TO CURRENT SUPPORTED GROQ VISION MODEL
+      model: 'qwen/qwen3.6-27b',
       messages: [
         {
           role: 'user',
