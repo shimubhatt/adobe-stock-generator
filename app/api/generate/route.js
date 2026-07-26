@@ -2,18 +2,20 @@ import { NextResponse } from 'next/server';
 
 export async function POST(req) {
   try {
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: "GEMINI_API_KEY is missing in Vercel Environment Variables" }, { status: 500 });
+      return NextResponse.json({ error: "GROQ_API_KEY is missing in Vercel Environment Variables" }, { status: 500 });
     }
 
     const { imageBase64, fileName, batchOverview } = await req.json();
 
+    // Clean Base64 string
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imageBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
+    const imageUrl = `data:${mimeType};base64,${base64Data}`;
 
     const promptText = `You are an elite Adobe Stock SEO expert.
-Analyze this vector/icon image and generate metadata.
+Analyze this image and generate optimized metadata.
 
 ${batchOverview ? `BATCH OVERVIEW / USER CONTEXT: "${batchOverview}". Use this context for accurate keywords.` : ''}
 
@@ -25,55 +27,45 @@ STRICT RULES:
    - Keywords #8 to #20 MUST be secondary concepts, usage, and context.
    - Keywords #21 to #30 MUST contain technical terms (e.g. vector, illustration, flat, isolated, icon set, line art).
 
-OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "keywords". Do not add markdown code blocks or backticks.`;
+OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "keywords". Do not add markdown code blocks, backticks, or conversational text.`;
 
-    // Active Free-Tier Models list (v1 Endpoint)
-    const candidateModels = ["gemini-1.5-flash-8b", "gemini-1.5-pro"];
-    let responseText = null;
-    let lastError = null;
-
-    for (const modelName of candidateModels) {
-      try {
-        const url = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${apiKey}`;
-
-        const response = await fetch(url, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            contents: [
+    // Groq OpenAI-compatible Chat Completions Endpoint
+    const response = await fetch("https://api.groq.com/openai/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: "llama-3.2-11b-vision-preview",
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: promptText },
               {
-                parts: [
-                  { text: promptText },
-                  {
-                    inline_data: {
-                      mime_type: mimeType,
-                      data: base64Data
-                    }
-                  }
-                ]
+                type: "image_url",
+                image_url: {
+                  url: imageUrl
+                }
               }
-            ],
-            generationConfig: {
-              response_mime_type: "application/json"
-            }
-          })
-        });
+            ]
+          }
+        ],
+        temperature: 0.2,
+        response_format: { type: "json_object" }
+      })
+    });
 
-        const data = await response.json();
+    const data = await response.json();
 
-        if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
-          responseText = data.candidates[0].content.parts[0].text;
-          break; // Success!
-        } else {
-          lastError = data.error?.message || `Failed on model ${modelName}`;
-        }
-      } catch (err) {
-        lastError = err.message;
-      }
+    if (!response.ok) {
+      throw new Error(data.error?.message || "Groq API Error");
     }
 
+    const responseText = data.choices?.[0]?.message?.content;
     if (!responseText) {
-      throw new Error(lastError || "Could not generate content. Please check API Key quota.");
+      throw new Error("Invalid response received from Groq API");
     }
 
     const cleanJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
