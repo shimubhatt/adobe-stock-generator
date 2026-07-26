@@ -14,13 +14,13 @@ export async function POST(req) {
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imageBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    // Updated Active Gemini Model Endpoint
+    // Model name set to gemini-2.0-flash (Latest Active Endpoint)
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash"
+      model: "gemini-2.0-flash" 
     });
 
     const prompt = `You are an elite Adobe Stock SEO expert.
-    Analyze this vector/icon image and generate optimized metadata.
+    Analyze this image and generate optimized metadata.
 
     ${batchOverview ? `BATCH OVERVIEW / USER CONTEXT: "${batchOverview}". Use this context for highly accurate keywords.` : ''}
 
@@ -32,7 +32,7 @@ export async function POST(req) {
        - Keywords #8 to #20 MUST be secondary concepts, usage, and context.
        - Keywords #21 to #30 MUST contain technical/style terms (e.g. vector, illustration, flat, isolated, icon set, line art).
 
-    OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "keywords". Do not add markdown backticks if possible, just plain JSON text.`;
+    OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "keywords". Do not add markdown code blocks.`;
 
     const imagePart = {
       inlineData: {
@@ -44,7 +44,7 @@ export async function POST(req) {
     const result = await model.generateContent([prompt, imagePart]);
     const responseText = result.response.text();
 
-    // Clean any potential markdown backticks from AI output
+    // Clean JSON String
     const cleanJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
     const parsedData = JSON.parse(cleanJson);
 
