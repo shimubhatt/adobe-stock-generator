@@ -27,8 +27,8 @@ STRICT RULES:
 
 OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "keywords". Do not add markdown code blocks or backticks.`;
 
-    // Active Supported Gemini Models
-    const candidateModels = ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
+    // Active Free-Tier Models list (v1 Endpoint)
+    const candidateModels = ["gemini-1.5-flash-8b", "gemini-1.5-pro"];
     let responseText = null;
     let lastError = null;
 
@@ -63,7 +63,7 @@ OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "ke
 
         if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
           responseText = data.candidates[0].content.parts[0].text;
-          break; // Success
+          break; // Success!
         } else {
           lastError = data.error?.message || `Failed on model ${modelName}`;
         }
@@ -73,7 +73,7 @@ OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "ke
     }
 
     if (!responseText) {
-      throw new Error(lastError || "Could not generate content from Gemini API.");
+      throw new Error(lastError || "Could not generate content. Please check API Key quota.");
     }
 
     const cleanJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
