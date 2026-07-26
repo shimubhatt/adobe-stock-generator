@@ -18,19 +18,22 @@ export async function POST(req) {
     }
 
     const systemPrompt = `
-      You are an expert SEO metadata generator for Adobe Stock.
-      Analyze the provided image and its visual style carefully.
-      Output ONLY a valid raw JSON string matching this exact structure with NO markdown fences, NO explanation, and NO <think> tags:
+      You are an expert Adobe Stock metadata generator.
+      Analyze the provided visual image VERY CAREFULLY. 
+      Generate dynamic Title and Keywords specifically matching ONLY what is present in THIS specific image.
+
+      OUTPUT FORMAT:
+      Output MUST be valid raw JSON with NO markdown fences, NO explanation, and NO <think> tags:
 
       {
-        "title": "A concise, highly descriptive SEO title under 70 characters mentioning style if relevant (e.g., Vintage 1930s Halloween Icon Set)",
-        "keywords": "keyword1, keyword2, keyword3, keyword4, keyword5, keyword6, keyword7, keyword8, keyword9, keyword10, keyword11, keyword12, keyword13, keyword14, keyword15, keyword16, keyword17, keyword18, keyword19, keyword20, keyword21, keyword22, keyword23, keyword24, keyword25",
+        "title": "Clear descriptive title specific to the image objects (max 70 characters)",
+        "keywords": "30 to 40 highly relevant, comma-separated keywords describing the subject, style, color, object, background, and use case",
         "category": "Graphic Resources"
       }
     `;
 
     const finalPrompt = customInstructions
-      ? `${systemPrompt}\nUser Context / Special Style Instructions: ${customInstructions}`
+      ? `${systemPrompt}\nOptional Context Hint (Use ONLY if relevant to image): ${customInstructions}`
       : systemPrompt;
 
     const response = await groq.chat.completions.create({
@@ -66,11 +69,11 @@ export async function POST(req) {
     try {
       parsedData = JSON.parse(rawText);
     } catch (e) {
-      console.error('JSON Parse Error:', e);
+      console.error('JSON Parse Error:', e, 'Raw output:', rawText);
       parsedData = {
-        title: 'Vintage Halloween Cartoon Characters Icon Set',
-        keywords: 'halloween, vintage, 1930s, rubber hose, cartoon, retro, pumpkin, skeleton, ghost, witch, vampire, bat, spider, cat, vector, illustration',
-        category: 'Graphic Resources'
+        title: `${filename.split('.')[0].replace(/_/g, ' ')} Vector Illustration`,
+        keywords: 'vector, illustration, icon, set, isolated, graphic, design, art, element, object, symbol',
+        category: 'Graphic Resources',
       };
     }
 
