@@ -15,8 +15,32 @@ export default function Home() {
     setErrorMessage('');
   };
 
-  // Safe Delay function to bypass 429 Rate Limits
   const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+  const fetchWithRetry = async (payload, retries = 2) => {
+    for (let i = 0; i <= retries; i++) {
+      try {
+        const res = await fetch('/api/generate', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        
+        if (res.ok && !data.error) return data;
+        
+        // If Rate Limit (429), wait and retry
+        if (data.error && data.error.includes('429') && i < retries) {
+          await delay(3000 * (i + 1));
+          continue;
+        }
+        throw new Error(data.error || 'Failed to process image');
+      } catch (err) {
+        if (i === retries) throw err;
+        await delay(2000);
+      }
+    }
+  };
 
   const processBatch = async () => {
     if (!files.length) return;
@@ -39,33 +63,22 @@ export default function Home() {
       const imageBase64 = await base64Promise;
 
       try {
-        const res = await fetch('/api/generate', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ 
-            imageBase64, 
-            fileName: file.name,
-            batchOverview: batchOverview 
-          }),
+        const data = await fetchWithRetry({ 
+          imageBase64, 
+          fileName: file.name,
+          batchOverview: batchOverview 
         });
-        
-        const data = await res.json();
-        
-        if (res.ok && !data.error) {
-          generatedData.push({ ...data, previewUrl: imageBase64 });
-          setResults([...generatedData]); // Live Update Table
-        } else {
-          console.error("API Error:", data.error);
-          setErrorMessage(`Error on ${file.name}: ${data.error}`);
-        }
+
+        generatedData.push({ ...data, previewUrl: imageBase64 });
+        setResults([...generatedData]); // Live Update Table
       } catch (err) {
         console.error("Error processing file:", file.name, err);
-        setErrorMessage("Network error or server failed to respond.");
+        setErrorMessage(`Error on ${file.name}: ${err.message}`);
       }
 
-      // Safe 1.5 Second delay between requests for Free Tier Stability
+      // Safe Delay for Rate Limit
       if (i < files.length - 1) {
-        await delay(1500);
+        await delay(2000);
       }
     }
 
@@ -119,7 +132,7 @@ export default function Home() {
           </label>
           <textarea
             rows={2}
-            placeholder="e.g., Minimalist blue outline icons set for corporate business, technology, and cybersecurity."
+            placeholder="e.g., 1930s vintage rubber hose style cartoon Halloween icons."
             value={batchOverview}
             onChange={(e) => setBatchOverview(e.target.value)}
             style={{ width: '100%', padding: '10px 14px', borderRadius: '8px', border: '1px solid #cbd5e1', fontSize: '14px', boxSizing: 'border-box', outline: 'none' }}
@@ -152,7 +165,7 @@ export default function Home() {
         )}
       </div>
 
-      {/* CSVNest Style Table Preview Section */}
+      {/* Preview Section */}
       {results.length > 0 && (
         <div style={{ backgroundColor: '#fff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '24px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }}>
           
@@ -168,7 +181,6 @@ export default function Home() {
             </button>
           </div>
 
-          {/* Table */}
           <div style={{ overflowX: 'auto' }}>
             <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', fontSize: '13px' }}>
               <thead>
