@@ -5,7 +5,7 @@ export async function POST(req) {
   try {
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json({ error: "GEMINI_API_KEY is missing" }, { status: 500 });
+      return NextResponse.json({ error: "GEMINI_API_KEY is missing in Vercel Environment Variables" }, { status: 500 });
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
@@ -20,19 +20,19 @@ export async function POST(req) {
     });
 
     const prompt = `You are an elite Adobe Stock SEO expert.
-    Analyze this vector/icon image and generate optimized metadata.
+    Analyze this vector/icon image and generate metadata.
 
-    ${batchOverview ? `BATCH OVERVIEW / USER CONTEXT: "${batchOverview}". Use this context to better understand the overall theme and niche.` : ''}
+    ${batchOverview ? `BATCH OVERVIEW / USER CONTEXT: "${batchOverview}". Use this context for accurate keywords.` : ''}
 
     STRICT RULES:
-    1. Title: Sentence case, highly descriptive, under 70 characters. NO keyword stuffing.
-    2. Category: Select the most relevant category (e.g. Graphic Resources, People, Technology, Icons, Business).
+    1. Title: Sentence case, descriptive, under 70 characters. NO keyword stuffing.
+    2. Category: Select most relevant category (e.g. Graphic Resources, People, Technology, Icons, Business).
     3. Keywords: Exactly 25 to 30 highly relevant keywords separated by commas.
-       - Keywords #1 to #7 MUST be the main subject, exact action, or primary concept visible in the image.
+       - Keywords #1 to #7 MUST be the primary subject, main action, or exact concept visible.
        - Keywords #8 to #20 MUST be secondary concepts, usage, and context.
-       - Keywords #21 to #30 MUST contain technical styles (e.g., vector, illustration, flat, isolated, icon set, line art).
+       - Keywords #21 to #30 MUST contain technical terms (e.g. vector, illustration, flat, isolated, icon set, line art).
 
-    OUTPUT FORMAT: Return ONLY a valid JSON object with keys: "title", "category", "keywords".`;
+    OUTPUT FORMAT: Return ONLY a JSON object with keys: "title", "category", "keywords".`;
 
     const imagePart = {
       inlineData: {
@@ -43,7 +43,10 @@ export async function POST(req) {
 
     const result = await model.generateContent([prompt, imagePart]);
     const responseText = result.response.text();
-    const parsedData = JSON.parse(responseText);
+
+    // Clean JSON response
+    const cleanJson = responseText.replace(/```json/g, '').replace(/```/g, '').trim();
+    const parsedData = JSON.parse(cleanJson);
 
     return NextResponse.json({ ...parsedData, filename: fileName });
 
