@@ -27,12 +27,11 @@ STRICT RULES:
 
 OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "keywords". Do not add markdown code blocks or backticks.`;
 
-    // Free Tier Supported Stable Models Priority Order
-    const candidateModels = ["gemini-1.5-flash", "gemini-2.5-flash"];
+    // Active Supported Gemini Models
+    const candidateModels = ["gemini-2.0-flash", "gemini-2.0-flash-lite"];
     let responseText = null;
     let lastError = null;
 
-    // Loop through candidate models if one fails due to quota limit
     for (const modelName of candidateModels) {
       try {
         const url = `https://generativelanguage.googleapis.com/v1/models/${modelName}:generateContent?key=${apiKey}`;
@@ -64,7 +63,7 @@ OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "ke
 
         if (response.ok && data.candidates?.[0]?.content?.parts?.[0]?.text) {
           responseText = data.candidates[0].content.parts[0].text;
-          break; // Success! Exit loop
+          break; // Success
         } else {
           lastError = data.error?.message || `Failed on model ${modelName}`;
         }
