@@ -18,33 +18,36 @@ export async function POST(req) {
     }
 
     const systemPrompt = `
-      You are an expert Adobe Stock metadata generator.
-      Analyze the provided visual image VERY CAREFULLY. 
-      Generate dynamic Title and Keywords specifically matching ONLY what is present in THIS specific image.
-
-      OUTPUT FORMAT:
-      Output MUST be valid raw JSON with NO markdown fences, NO explanation, and NO <think> tags:
-
+      You are an expert Adobe Stock SEO metadata generator.
+      Analyze the visually provided image very carefully.
+      
+      Generate highly accurate SEO metadata strictly tailored to what is visible in THIS image.
+      
+      CRITICAL INSTRUCTION: You MUST return a VALID JSON object matching this structure:
       {
-        "title": "Clear descriptive title specific to the image objects (max 70 characters)",
-        "keywords": "30 to 40 highly relevant, comma-separated keywords describing the subject, style, color, object, background, and use case",
+        "title": "A concise, highly descriptive SEO title under 70 characters specific to the visual objects",
+        "keywords": "30 to 45 relevant, comma-separated keywords describing the subject, style, color, object, background, and use case",
         "category": "Graphic Resources"
       }
     `;
 
-    const finalPrompt = customInstructions
-      ? `${systemPrompt}\nOptional Context Hint (Use ONLY if relevant to image): ${customInstructions}`
-      : systemPrompt;
+    const userPrompt = customInstructions
+      ? `Analyze this image. Context hint: ${customInstructions}`
+      : `Analyze this image and generate Adobe Stock metadata.`;
 
     const response = await groq.chat.completions.create({
       model: 'qwen/qwen3.6-27b',
       messages: [
         {
+          role: 'system',
+          content: systemPrompt,
+        },
+        {
           role: 'user',
           content: [
             {
               type: 'text',
-              text: finalPrompt,
+              text: userPrompt,
             },
             {
               type: 'image_url',
@@ -55,27 +58,14 @@ export async function POST(req) {
           ],
         },
       ],
+      // 🟢 ENSURES GROQ RETURNS STRICT RAW JSON ONLY
+      response_format: { type: 'json_object' },
       temperature: 0.1,
       max_tokens: 1000,
     });
 
-    let rawText = response.choices[0]?.message?.content || '{}';
-
-    // Clean reasoning and markdown formatting
-    rawText = rawText.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
-    rawText = rawText.replace(/```json/gi, '').replace(/```/gi, '').trim();
-
-    let parsedData = {};
-    try {
-      parsedData = JSON.parse(rawText);
-    } catch (e) {
-      console.error('JSON Parse Error:', e, 'Raw output:', rawText);
-      parsedData = {
-        title: `${filename.split('.')[0].replace(/_/g, ' ')} Vector Illustration`,
-        keywords: 'vector, illustration, icon, set, isolated, graphic, design, art, element, object, symbol',
-        category: 'Graphic Resources',
-      };
-    }
+    const rawContent = response.choices[0]?.message?.content || '{}';
+    const parsedData = JSON.parse(rawContent);
 
     return NextResponse.json({
       success: true,
@@ -86,9 +76,19 @@ export async function POST(req) {
     });
   } catch (error) {
     console.error('Groq API Error:', error);
-    return NextResponse.json(
-      { error: error.message || 'Failed to generate metadata' },
-      { status: 500 }
-    );
+
+    // Dynamic smart fallback if API fails completely
+    const cleanName = (filename || 'stock image')
+      .replace(/\.[^/.]+$/, '')
+      .replace(/_\d{10,}$/, '')
+      .replace(/_/g, ' ');
+
+    return NextResponse.json({
+      success: true,
+      filename: filename || 'adobe_stock_image.jpeg',
+      title: `${cleanName} Vector Illustration`,
+      keywords: `${cleanName.toLowerCase().split(' ').join(', ')}, vector, illustration, graphic, design, art, icon, isolated`,
+      category: 'Graphic Resources',
+    });
   }
 }
