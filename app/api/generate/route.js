@@ -14,9 +14,9 @@ export async function POST(req) {
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imageBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    // Free Tier Supported Stable Model
+    // Model Endpoint set to gemini-1.5-flash-latest or gemini-2.0-flash
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-1.5-flash" 
+      model: "gemini-1.5-flash-latest" 
     });
 
     const prompt = `You are an elite Adobe Stock SEO expert.
@@ -32,7 +32,7 @@ export async function POST(req) {
        - Keywords #8 to #20 MUST be secondary concepts, usage, and context.
        - Keywords #21 to #30 MUST contain technical terms (e.g. vector, illustration, flat, isolated, icon set, line art).
 
-    OUTPUT FORMAT: Return ONLY a JSON object with keys: "title", "category", "keywords". Do not add markdown backticks.`;
+    OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "keywords". Do not add markdown backticks.`;
 
     const imagePart = {
       inlineData: {
