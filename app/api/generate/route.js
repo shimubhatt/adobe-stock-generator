@@ -27,8 +27,8 @@ STRICT RULES:
 
 OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "keywords". Do not add markdown code blocks or backticks.`;
 
-    // Direct REST API Call to Google Gemini (No SDK dependency)
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    // Using Google AI Stable v1 Endpoint with gemini-2.0-flash
+    const url = `https://generativelanguage.googleapis.com/v1/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
     const response = await fetch(url, {
       method: 'POST',
