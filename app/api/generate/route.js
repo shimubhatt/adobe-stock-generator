@@ -14,25 +14,25 @@ export async function POST(req) {
     const base64Data = imageBase64.replace(/^data:image\/\w+;base64,/, '');
     const mimeType = imageBase64.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
 
-    // Model name set to gemini-2.0-flash (Latest Active Endpoint)
+    // Free Tier Supported Stable Model
     const model = genAI.getGenerativeModel({ 
-      model: "gemini-2.0-flash" 
+      model: "gemini-1.5-flash" 
     });
 
     const prompt = `You are an elite Adobe Stock SEO expert.
-    Analyze this image and generate optimized metadata.
+    Analyze this vector/icon image and generate metadata.
 
-    ${batchOverview ? `BATCH OVERVIEW / USER CONTEXT: "${batchOverview}". Use this context for highly accurate keywords.` : ''}
+    ${batchOverview ? `BATCH OVERVIEW / USER CONTEXT: "${batchOverview}". Use this context for accurate keywords.` : ''}
 
     STRICT RULES:
-    1. Title: Sentence case, highly descriptive, under 70 characters. NO keyword stuffing.
+    1. Title: Sentence case, descriptive, under 70 characters. NO keyword stuffing.
     2. Category: Select most relevant category (e.g. Graphic Resources, People, Technology, Icons, Business).
     3. Keywords: Exactly 25 to 30 highly relevant keywords separated by commas.
        - Keywords #1 to #7 MUST be the primary subject, main action, or exact concept visible.
        - Keywords #8 to #20 MUST be secondary concepts, usage, and context.
-       - Keywords #21 to #30 MUST contain technical/style terms (e.g. vector, illustration, flat, isolated, icon set, line art).
+       - Keywords #21 to #30 MUST contain technical terms (e.g. vector, illustration, flat, isolated, icon set, line art).
 
-    OUTPUT FORMAT: Return ONLY a raw JSON object with keys: "title", "category", "keywords". Do not add markdown code blocks.`;
+    OUTPUT FORMAT: Return ONLY a JSON object with keys: "title", "category", "keywords". Do not add markdown backticks.`;
 
     const imagePart = {
       inlineData: {
@@ -44,7 +44,6 @@ export async function POST(req) {
     const result = await model.generateContent([prompt, imagePart]);
     const responseText = result.response.text();
 
-    // Clean JSON String
     const cleanJson = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
     const parsedData = JSON.parse(cleanJson);
 
