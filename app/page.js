@@ -4,6 +4,7 @@ import Papa from 'papaparse';
 
 export default function Home() {
   const [loading, setLoading] = useState(false);
+  const [progressText, setProgressText] = useState('');
   const [results, setResults] = useState([]);
   const [batchOverview, setBatchOverview] = useState('');
   const [files, setFiles] = useState([]);
@@ -14,6 +15,9 @@ export default function Home() {
     setErrorMessage('');
   };
 
+  // Safe Delay function to bypass 429 Rate Limits
+  const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
   const processBatch = async () => {
     if (!files.length) return;
 
@@ -22,7 +26,10 @@ export default function Home() {
     setErrorMessage('');
     const generatedData = [];
 
-    for (const file of files) {
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      setProgressText(`Processing image ${i + 1} of ${files.length}... Please wait.`);
+
       const reader = new FileReader();
       const base64Promise = new Promise((resolve) => {
         reader.onload = () => resolve(reader.result);
@@ -46,18 +53,24 @@ export default function Home() {
         
         if (res.ok && !data.error) {
           generatedData.push({ ...data, previewUrl: imageBase64 });
+          setResults([...generatedData]); // Live Update Table
         } else {
           console.error("API Error:", data.error);
-          setErrorMessage(data.error || "Failed to process image");
+          setErrorMessage(`Error on ${file.name}: ${data.error}`);
         }
       } catch (err) {
         console.error("Error processing file:", file.name, err);
         setErrorMessage("Network error or server failed to respond.");
       }
+
+      // Safe 1.5 Second delay between requests for Free Tier Stability
+      if (i < files.length - 1) {
+        await delay(1500);
+      }
     }
 
-    setResults(generatedData);
     setLoading(false);
+    setProgressText('');
   };
 
   const handleResultChange = (index, field, value) => {
@@ -92,7 +105,7 @@ export default function Home() {
           Adobe Stock SEO Metadata Generator
         </h1>
         <p style={{ color: '#666', fontSize: '14px', margin: 0 }}>
-          Generate, Preview, and Edit SEO Keywords for Adobe Stock (CSVNest Alternative)
+          Generate, Preview, and Edit SEO Keywords for Adobe Stock
         </p>
       </div>
 
@@ -127,14 +140,14 @@ export default function Home() {
         <button 
           onClick={processBatch} 
           disabled={loading || !files.length}
-          style={{ width: '100%', marginTop: '20px', padding: '14px', backgroundColor: loading ? '#94a3b8' : '#0070f3', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer', transition: 'background-color 0.2s' }}
+          style={{ width: '100%', marginTop: '20px', padding: '14px', backgroundColor: loading ? '#94a3b8' : '#0070f3', color: '#fff', border: 'none', borderRadius: '8px', fontSize: '16px', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer' }}
         >
-          {loading ? 'Analyzing with Gemini AI & Formatting SEO...' : 'Generate Metadata'}
+          {loading ? progressText : 'Generate Metadata'}
         </button>
 
         {errorMessage && (
           <p style={{ color: '#ef4444', marginTop: '12px', fontWeight: '500', textAlign: 'center', fontSize: '14px' }}>
-            Error: {errorMessage}
+            {errorMessage}
           </p>
         )}
       </div>
@@ -145,11 +158,11 @@ export default function Home() {
           
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
             <h2 style={{ fontSize: '18px', fontWeight: 'bold', margin: 0, color: '#0f172a' }}>
-              Metadata Preview ({results.length} Items)
+              Metadata Preview ({results.length} / {files.length} Completed)
             </h2>
             <button 
               onClick={downloadCSV} 
-              style={{ padding: '10px 20px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '6px' }}
+              style={{ padding: '10px 20px', backgroundColor: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: '600' }}
             >
               ⬇ Download CSV File
             </button>
