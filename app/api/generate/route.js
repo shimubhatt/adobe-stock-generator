@@ -87,6 +87,13 @@ export async function POST(req) {
       return NextResponse.json({ error: 'No image data provided' }, { status: 400 });
     }
 
+    if (!process.env.GROQ_API_KEY) {
+      return NextResponse.json(
+        { error: 'GROQ_API_KEY is not set on the server. Add it in Vercel → Project Settings → Environment Variables, then redeploy.' },
+        { status: 500 }
+      );
+    }
+
     // Vercel serverless function default body limit is ~4.5MB. The client compresses
     // images before sending, but guard here too so a huge upload fails fast and clearly.
     const approxBytes = (imageBase64.length * 3) / 4;
@@ -109,6 +116,9 @@ User-provided batch context (use this to inform style/subject interpretation, do
 
     const response = await groq.chat.completions.create({
       model: 'qwen/qwen3.6-27b',
+      reasoning_effort: 'none', // qwen3 reasons by default; combined with json_schema, the
+      // schema constraint can bind to the reasoning stream and leave `content` empty.
+      // Turning reasoning off keeps the structured output in `content`.
       messages: [
         { role: 'system', content: systemPrompt },
         {
@@ -139,13 +149,19 @@ User-provided batch context (use this to inform style/subject interpretation, do
       },
     });
 
-    let rawContent = response.choices?.[0]?.message?.content || '{}';
+    const message = response.choices?.[0]?.message || {};
+    // Some Groq reasoning models can leave `content` empty and put the actual JSON in
+    // `reasoning_content` when a schema constraint interacts with the thinking stream.
+    // Try content first, then fall back to reasoning_content before giving up.
+    let rawContent = message.content || message.reasoning_content || '{}';
     rawContent = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 
     let parsed = {};
+    let parseError = null;
     try {
       parsed = JSON.parse(rawContent);
     } catch (e) {
+      parseError = e.message;
       console.error('JSON parse error:', e, rawContent);
     }
 
@@ -162,6 +178,9 @@ User-provided batch context (use this to inform style/subject interpretation, do
         title: fb.title,
         keywords: fb.keywords,
         categoryId: fb.categoryId,
+        reason: parseError
+          ? `Model response wasn't valid JSON (${parseError})`
+          : 'Model returned an empty or incomplete response',
       });
     }
 
@@ -183,6 +202,7 @@ User-provided batch context (use this to inform style/subject interpretation, do
       title: fb.title,
       keywords: fb.keywords,
       categoryId: fb.categoryId,
+      reason: error?.message ? `Groq API error: ${error.message}` : 'Unknown Groq API error',
     });
   }
 }
