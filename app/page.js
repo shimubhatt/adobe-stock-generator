@@ -136,6 +136,7 @@ export default function Home() {
             title: data.title,
             keywords: data.keywords,
             categoryId: data.categoryId || DEFAULT_CATEGORY_ID,
+            error: data.isFallback ? data.reason || 'AI generation failed, showing a generic placeholder.' : '',
           });
           return;
         } catch (err) {
@@ -314,6 +315,7 @@ export default function Home() {
                 {item.status === 'pending' && <p className="hint">Waiting to generate…</p>}
                 {item.status === 'processing' && <p className="hint">Analyzing image…</p>}
                 {item.status === 'error' && <p className="hintError">{item.error || 'Something went wrong.'}</p>}
+                {item.status === 'needs-review' && item.error && <p className="hintError">{item.error}</p>}
 
                 {(item.status === 'done' || item.status === 'needs-review' || item.status === 'error') && (
                   <>
