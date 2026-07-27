@@ -1,0 +1,70 @@
+:root {
+  --arshio-black: #050909;
+  --arshio-navy: #1e2d45;
+  --cyber-mint: #00e5b0;
+  --white: #ffffff;
+  --mint-dark: #00b38a;
+  --deep-black: #0a1a1a;
+  --muted-teal: #5a7870;
+  --mint-tint: #e8fff9;
+
+  --font-display: 'Space Grotesk', sans-serif;
+  --font-body: 'Inter', sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--arshio-black);
+  color: var(--white);
+  font-family: var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+
+body {
+  min-height: 100vh;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  margin: 0;
+}
+
+button {
+  font-family: var(--font-body);
+}
+
+textarea,
+input,
+select {
+  font-family: var(--font-body);
+}
+
+::selection {
+  background: var(--cyber-mint);
+  color: var(--arshio-black);
+}
+
+*:focus-visible {
+  outline: 2px solid var(--cyber-mint);
+  outline-offset: 2px;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track {
+  background: var(--deep-black);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--arshio-navy);
+  border-radius: 6px;
+}
