@@ -6,7 +6,9 @@ import { ADOBE_CATEGORIES, DEFAULT_CATEGORY_ID } from '../lib/adobe-categories';
 
 const MAX_TITLE_CHARS = 70;
 const MAX_KEYWORDS = 49;
-const CONCURRENCY = 3;
+const CONCURRENCY = 1; // Groq's free/dev tier TPM limit is easy to blow through with
+// vision requests running in parallel — keep this serialized unless you're on a higher tier.
+const REQUEST_SPACING_MS = 1500; // small gap between requests to smooth out token usage
 
 let idCounter = 0;
 function nextId() {
@@ -21,7 +23,7 @@ function keywordCount(str) {
 
 // Resize + re-encode client-side before sending. Cuts payload size (Vercel's function
 // body limit is ~4.5MB), speeds up the request, and reduces vision-model token cost.
-function compressImage(file, maxDim = 1600, quality = 0.85) {
+function compressImage(file, maxDim = 1280, quality = 0.8) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onerror = () => reject(new Error('Could not read file'));
@@ -114,9 +116,8 @@ export default function Home() {
   const processItem = useCallback(
     async (id, file) => {
       updateItem(id, { status: 'processing', error: '' });
-      let attempt = 0;
-      while (attempt < 2) {
-        attempt += 1;
+      const maxAttempts = 4;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
         try {
           const base64 = await compressImage(file);
           const res = await fetch('/api/generate', {
@@ -129,6 +130,20 @@ export default function Home() {
             }),
           });
           const data = await res.json();
+
+          if (res.status === 429 && data.retryable) {
+            if (attempt >= maxAttempts) {
+              updateItem(id, {
+                status: 'error',
+                error: 'Still rate-limited after retries. Wait a bit, then click Regenerate.',
+              });
+              return;
+            }
+            updateItem(id, { error: `Rate limited — waiting ${Math.ceil(data.retryAfterSeconds)}s before retry…` });
+            await sleep((data.retryAfterSeconds || 5) * 1000 + 500);
+            continue;
+          }
+
           if (!res.ok || !data.success) throw new Error(data.error || 'Generation failed');
 
           updateItem(id, {
@@ -140,7 +155,7 @@ export default function Home() {
           });
           return;
         } catch (err) {
-          if (attempt >= 2) {
+          if (attempt >= maxAttempts) {
             updateItem(id, { status: 'error', error: err.message || 'Failed to generate' });
             return;
           }
@@ -172,6 +187,7 @@ export default function Home() {
         const id = queue[myIndex];
         const item = items.find((i) => i.id === id);
         if (item) await processItem(id, item.file);
+        if (cursor < queue.length) await sleep(REQUEST_SPACING_MS);
       }
     }
     await Promise.all(Array.from({ length: Math.min(CONCURRENCY, queue.length) }, worker));
@@ -313,7 +329,7 @@ export default function Home() {
                 </div>
 
                 {item.status === 'pending' && <p className="hint">Waiting to generate…</p>}
-                {item.status === 'processing' && <p className="hint">Analyzing image…</p>}
+                {item.status === 'processing' && <p className="hint">{item.error || 'Analyzing image…'}</p>}
                 {item.status === 'error' && <p className="hintError">{item.error || 'Something went wrong.'}</p>}
                 {item.status === 'needs-review' && item.error && <p className="hintError">{item.error}</p>}
 
