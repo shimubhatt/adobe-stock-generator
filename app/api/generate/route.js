@@ -10,6 +10,31 @@ const CATEGORY_NAMES = ADOBE_CATEGORIES.map((c) => c.name);
 const MAX_TITLE_CHARS = 70; // Adobe hard limit, no commas allowed
 const MAX_KEYWORDS = 49; // Adobe allows up to 50; keep one under as a safety margin
 
+function extractJson(rawText) {
+  let text = (rawText || '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/```json/gi, '')
+    .replace(/```/g, '')
+    .trim();
+
+  try {
+    return { data: JSON.parse(text), error: null };
+  } catch (e) {
+    // fall through to a looser extraction
+  }
+
+  const start = text.indexOf('{');
+  const end = text.lastIndexOf('}');
+  if (start !== -1 && end !== -1 && end > start) {
+    try {
+      return { data: JSON.parse(text.slice(start, end + 1)), error: null };
+    } catch (e) {
+      return { data: null, error: e.message };
+    }
+  }
+  return { data: null, error: 'No JSON object found in model response' };
+}
+
 // ---------- Sanitizers (enforce Adobe's actual CSV rules, don't just hope the model obeys) ----------
 
 function sanitizeTitle(raw) {
@@ -112,13 +137,15 @@ HARD RULES (violating these makes the output unusable):
 - Keyword coverage should span: primary subject(s), secondary objects/elements, action or concept depicted, setting/background, visual style or technique (e.g. flat design, line art, vector illustration, watercolor, 3D render, photograph), color palette, mood/emotion, and likely commercial use case (e.g. "web banner", "social media", "greeting card").
 - Category: choose exactly one of these official Adobe Stock category names that best fits the image: ${CATEGORY_NAMES.join(', ')}.
 
+Respond with ONLY a raw JSON object, no markdown code fences, no explanation, no text before or after it, in exactly this shape:
+{"title": "...", "keywords": "...", "category": "..."}
+
 User-provided batch context (use this to inform style/subject interpretation, do not just repeat it as keywords): ${customInstructions || 'None'}`;
 
     const response = await groq.chat.completions.create({
       model: 'qwen/qwen3.6-27b',
-      reasoning_effort: 'none', // qwen3 reasons by default; combined with json_schema, the
-      // schema constraint can bind to the reasoning stream and leave `content` empty.
-      // Turning reasoning off keeps the structured output in `content`.
+      reasoning_effort: 'none', // qwen3 reasons by default; without this, the actual answer
+      // can end up in the reasoning stream instead of the final content.
       messages: [
         { role: 'system', content: systemPrompt },
         {
@@ -130,46 +157,20 @@ User-provided batch context (use this to inform style/subject interpretation, do
         },
       ],
       temperature: 0.2,
-      response_format: {
-        type: 'json_schema',
-        json_schema: {
-          name: 'adobe_stock_metadata',
-          strict: true,
-          schema: {
-            type: 'object',
-            properties: {
-              title: { type: 'string', description: `SEO title, ${MAX_TITLE_CHARS} characters or fewer, no commas` },
-              keywords: { type: 'string', description: 'Comma-separated keywords, most relevant first, 35-45 terms' },
-              category: { type: 'string', enum: CATEGORY_NAMES, description: 'Best-matching Adobe Stock category name' },
-            },
-            required: ['title', 'keywords', 'category'],
-            additionalProperties: false,
-          },
-        },
-      },
+      response_format: { type: 'json_object' },
     });
 
     const message = response.choices?.[0]?.message || {};
-    // Some Groq reasoning models can leave `content` empty and put the actual JSON in
-    // `reasoning_content` when a schema constraint interacts with the thinking stream.
-    // Try content first, then fall back to reasoning_content before giving up.
-    let rawContent = message.content || message.reasoning_content || '{}';
-    rawContent = rawContent.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+    // Some Groq reasoning models can leave `content` empty and put the actual text in
+    // `reasoning_content` when reasoning isn't fully disabled. Try content first, then
+    // fall back to reasoning_content before giving up.
+    const { data: parsed, error: parseError } = extractJson(message.content || message.reasoning_content);
 
-    let parsed = {};
-    let parseError = null;
-    try {
-      parsed = JSON.parse(rawContent);
-    } catch (e) {
-      parseError = e.message;
-      console.error('JSON parse error:', e, rawContent);
-    }
+    const title = sanitizeTitle(parsed?.title);
+    const keywords = sanitizeKeywords(parsed?.keywords);
+    const categoryId = categoryNameToId(parsed?.category);
 
-    const title = sanitizeTitle(parsed.title);
-    const keywords = sanitizeKeywords(parsed.keywords);
-    const categoryId = categoryNameToId(parsed.category);
-
-    if (!title || !keywords) {
+    if (!parsed || !title || !keywords) {
       const fb = buildFallback(filename, customInstructions);
       return NextResponse.json({
         success: true,
