@@ -142,23 +142,54 @@ Respond with ONLY a raw JSON object, no markdown code fences, no explanation, no
 
 User-provided batch context (use this to inform style/subject interpretation, do not just repeat it as keywords): ${customInstructions || 'None'}`;
 
-    const response = await groq.chat.completions.create({
-      model: 'qwen/qwen3.6-27b',
-      reasoning_effort: 'none', // qwen3 reasons by default; without this, the actual answer
-      // can end up in the reasoning stream instead of the final content.
-      messages: [
-        { role: 'system', content: systemPrompt },
-        {
-          role: 'user',
-          content: [
-            { type: 'text', text: 'Analyze this image and generate Adobe Stock metadata following every rule exactly.' },
-            { type: 'image_url', image_url: { url: imageBase64 } },
-          ],
-        },
-      ],
-      temperature: 0.2,
-      response_format: { type: 'json_object' },
-    });
+    let response;
+    try {
+      response = await groq.chat.completions.create({
+        model: 'qwen/qwen3.6-27b',
+        reasoning_effort: 'none', // qwen3 reasons by default; without this, the actual answer
+        // can end up in the reasoning stream instead of the final content.
+        messages: [
+          { role: 'system', content: systemPrompt },
+          {
+            role: 'user',
+            content: [
+              { type: 'text', text: 'Analyze this image and generate Adobe Stock metadata following every rule exactly.' },
+              { type: 'image_url', image_url: { url: imageBase64 } },
+            ],
+          },
+        ],
+        temperature: 0.2,
+        response_format: { type: 'json_object' },
+      });
+    } catch (groqError) {
+      const status = groqError?.status || groqError?.response?.status;
+      const rawMsg = groqError?.message || '';
+      const isRateLimit = status === 429 || /rate_limit_exceeded|rate limit reached/i.test(rawMsg);
+
+      if (isRateLimit) {
+        const match = rawMsg.match(/try again in ([\d.]+)s/i);
+        const retryAfterSeconds = match ? parseFloat(match[1]) : 5;
+        // Transport-level, recoverable — let the client retry with real backoff
+        // instead of silently handing back a generic fallback.
+        return NextResponse.json(
+          { error: 'Groq rate limit reached for this minute.', retryable: true, retryAfterSeconds },
+          { status: 429 }
+        );
+      }
+
+      // Genuinely unexpected API error — fall back so the batch doesn't stall.
+      console.error('Groq API error:', groqError);
+      const fb = buildFallback(filename, customInstructions);
+      return NextResponse.json({
+        success: true,
+        isFallback: true,
+        filename,
+        title: fb.title,
+        keywords: fb.keywords,
+        categoryId: fb.categoryId,
+        reason: rawMsg ? `Groq API error: ${rawMsg}` : 'Unknown Groq API error',
+      });
+    }
 
     const message = response.choices?.[0]?.message || {};
     // Some Groq reasoning models can leave `content` empty and put the actual text in
