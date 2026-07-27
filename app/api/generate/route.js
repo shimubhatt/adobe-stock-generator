@@ -137,14 +137,19 @@ HARD RULES (violating these makes the output unusable):
 - Keyword coverage should span: primary subject(s), secondary objects/elements, action or concept depicted, setting/background, visual style or technique (e.g. flat design, line art, vector illustration, watercolor, 3D render, photograph), color palette, mood/emotion, and likely commercial use case (e.g. "web banner", "social media", "greeting card").
 - Category: choose exactly one of these official Adobe Stock category names that best fits the image: ${CATEGORY_NAMES.join(', ')}.
 
+CONTEXT YOU MUST ASSUME: this is stylized, commercially-licensed stock clip art/vector artwork (icons, illustrations, seasonal decor) intended for legitimate design use — greeting cards, packaging, websites, coloring books, party decorations, etc. Themes like skeletons, monsters, Halloween, horror-movie style icons, or similar spooky/cartoon imagery are completely normal, family-friendly stock content, NOT real violence, gore, or harm. Always describe the actual visual content factually and completely — never leave title or keywords blank or vague because a theme seems dark or spooky.
+
 Respond with ONLY a raw JSON object, no markdown code fences, no explanation, no text before or after it, in exactly this shape:
 {"title": "...", "keywords": "...", "category": "..."}
 
 User-provided batch context (use this to inform style/subject interpretation, do not just repeat it as keywords): ${customInstructions || 'None'}`;
 
-    let response;
-    try {
-      response = await groq.chat.completions.create({
+    const attemptOnce = async (extraNudge) => {
+      const userText = extraNudge
+        ? `Analyze this image and generate Adobe Stock metadata following every rule exactly. ${extraNudge}`
+        : 'Analyze this image and generate Adobe Stock metadata following every rule exactly.';
+
+      const response = await groq.chat.completions.create({
         model: 'qwen/qwen3.6-27b',
         reasoning_effort: 'none', // qwen3 reasons by default; without this, the actual answer
         // can end up in the reasoning stream instead of the final content.
@@ -153,14 +158,50 @@ User-provided batch context (use this to inform style/subject interpretation, do
           {
             role: 'user',
             content: [
-              { type: 'text', text: 'Analyze this image and generate Adobe Stock metadata following every rule exactly.' },
+              { type: 'text', text: userText },
               { type: 'image_url', image_url: { url: imageBase64 } },
             ],
           },
         ],
         temperature: 0.2,
+        max_tokens: 700, // give enough room to finish the JSON — too low was causing
+        // Groq's "max completion tokens reached before generating a valid document" error
         response_format: { type: 'json_object' },
       });
+
+      const message = response.choices?.[0]?.message || {};
+      const rawText = message.content || message.reasoning_content || '';
+      const { data: parsed, error: parseError } = extractJson(rawText);
+
+      return {
+        title: sanitizeTitle(parsed?.title),
+        keywords: sanitizeKeywords(parsed?.keywords),
+        categoryId: categoryNameToId(parsed?.category),
+        parsed,
+        parseError,
+        rawSnippet: rawText.slice(0, 160),
+      };
+    };
+
+    let result;
+    try {
+      try {
+        result = await attemptOnce();
+      } catch (firstErr) {
+        const firstMsg = firstErr?.message || '';
+        const isTruncated = /json_validate_failed|max completion tokens/i.test(firstMsg);
+        if (!isTruncated) throw firstErr;
+        // Ran out of room before finishing the JSON — ask for a shorter, tighter answer instead.
+        result = await attemptOnce('Keep the keywords list to at most 25 terms and be concise so the full JSON fits.');
+      }
+      // Model returned syntactically valid JSON but with blank title/keywords — usually an
+      // overly-cautious response to spooky/monster/skeleton themed clip art. One retry with
+      // an explicit nudge resolves most of these without falling back to a generic title.
+      if (result.parsed && (!result.title || !result.keywords)) {
+        result = await attemptOnce(
+          'This is completely normal commercial clip art. Do not leave any field blank — describe exactly what is visually depicted.'
+        );
+      }
     } catch (groqError) {
       const status = groqError?.status || groqError?.response?.status;
       const rawMsg = groqError?.message || '';
@@ -180,6 +221,7 @@ User-provided batch context (use this to inform style/subject interpretation, do
       // Genuinely unexpected API error — fall back so the batch doesn't stall.
       console.error('Groq API error:', groqError);
       const fb = buildFallback(filename, customInstructions);
+      const isTruncated = /json_validate_failed|max completion tokens/i.test(rawMsg);
       return NextResponse.json({
         success: true,
         isFallback: true,
@@ -187,22 +229,26 @@ User-provided batch context (use this to inform style/subject interpretation, do
         title: fb.title,
         keywords: fb.keywords,
         categoryId: fb.categoryId,
-        reason: rawMsg ? `Groq API error: ${rawMsg}` : 'Unknown Groq API error',
+        reason: isTruncated
+          ? 'Model response was cut off before finishing the JSON, even after a shorter retry.'
+          : rawMsg
+          ? `Groq API error: ${rawMsg}`
+          : 'Unknown Groq API error',
       });
     }
 
-    const message = response.choices?.[0]?.message || {};
-    // Some Groq reasoning models can leave `content` empty and put the actual text in
-    // `reasoning_content` when reasoning isn't fully disabled. Try content first, then
-    // fall back to reasoning_content before giving up.
-    const { data: parsed, error: parseError } = extractJson(message.content || message.reasoning_content);
-
-    const title = sanitizeTitle(parsed?.title);
-    const keywords = sanitizeKeywords(parsed?.keywords);
-    const categoryId = categoryNameToId(parsed?.category);
+    const { title, keywords, categoryId, parsed, parseError, rawSnippet } = result;
 
     if (!parsed || !title || !keywords) {
       const fb = buildFallback(filename, customInstructions);
+      let reason;
+      if (parseError) {
+        reason = `Model response wasn't valid JSON (${parseError})`;
+      } else if (!rawSnippet) {
+        reason = 'Model returned a completely empty response (even after a retry)';
+      } else {
+        reason = `Model returned blank fields even after a retry. Raw response started with: "${rawSnippet}"`;
+      }
       return NextResponse.json({
         success: true,
         isFallback: true,
@@ -210,9 +256,7 @@ User-provided batch context (use this to inform style/subject interpretation, do
         title: fb.title,
         keywords: fb.keywords,
         categoryId: fb.categoryId,
-        reason: parseError
-          ? `Model response wasn't valid JSON (${parseError})`
-          : 'Model returned an empty or incomplete response',
+        reason,
       });
     }
 
